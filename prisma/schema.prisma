@@ -1,0 +1,247 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  roleId Int @id @default(autoincrement()) @map("user_role_id")
+  role String @db.VarChar(10) @default("user")
+
+  user Users[]
+
+  @@map("role")
+}
+
+model Users {
+  userId Int @id @default(autoincrement()) @map("user_id")
+  name String @db.VarChar(40)
+  lastname String @db.VarChar(40)
+  email String @db.VarChar(80) @unique
+  username String @db.VarChar(80) @unique @map("username")
+  password String @db.VarChar(72)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  role Role @relation(fields: [roleId], references: [roleId], onUpdate: Cascade, onDelete: Cascade)
+  roleId Int @default(1) @map("role_id")
+
+  favoritesAndSavedCode FavoritesAndSavedCode[]
+  code Code[]
+  commentsCodeLanguaje CommentsCodeLanguaje[]
+  commentsCode CommentsCode[]
+
+  @@map("users")
+  @@index([name])
+  @@index([username])
+}
+
+model Code {
+  codeId Int @id @default(autoincrement()) @map("code_id")
+  user Users @relation(fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
+  userId Int @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  title String @db.VarChar(100)
+  explanation String @db.VarChar(300)
+
+  favoritesAndSavedCode FavoritesAndSavedCode[]
+  codeLanguage CodeLanguage[]
+  codeTag CodeTag[]
+  commentsCode CommentsCode[]
+
+  @@map("code")
+  @@unique([userId, title])
+}
+
+model Tag {
+  tagId Int @id @default(autoincrement()) @map("tag_id")
+  tag String @db.VarChar(30) @unique
+
+  codeTag CodeTag[]
+
+  @@map("tag")
+}
+
+model CodeTag {
+  CodeTagId Int @id @default(autoincrement()) @map("code_tag_id")
+  tag Tag @relation(fields: [tagId], references: [tagId], onUpdate: Cascade, onDelete: Cascade)
+  tagId Int @map("tag_id")
+  code Code @relation(fields: [codeId], references: [codeId], onUpdate: Cascade, onDelete: Cascade)
+  codeId Int @map("code_id")
+
+  @@map("code_tag")
+}
+
+model FavoritesOrSaved {
+  favoritesOrSavedId Int @id @default(autoincrement()) @map("saved_code_id")
+  FavoritesOrSaved String @db.VarChar(20) @unique
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  favoritesAndSavedCode FavoritesAndSavedCode[]
+
+  @@map("favorites_or_saved")
+}
+
+model FavoritesAndSavedCode {
+  favoritesAndSavedCodeId Int @id @default(autoincrement()) @map("favorites_and_saved_code_id")
+  user Users @relation(fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
+  userId Int @map("user_id")
+  code Code @relation(fields: [codeId], references: [codeId], onUpdate: Cascade, onDelete: Cascade)
+  codeId Int @map("code_id")
+  favoritesOrSaved FavoritesOrSaved @relation(fields: [favoritesOrSavedId], references: [favoritesOrSavedId], onUpdate: Cascade, onDelete: Cascade)
+  favoritesOrSavedId Int @map("favorites_or_saved_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("favorites_and_saved_code")
+}
+
+model Language {
+  languageId Int @id @default(autoincrement()) @map("language_id")
+  language String @db.VarChar(30) @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  codeLanguage CodeLanguage[]
+  tagByLanguage TagByLanguage[]
+
+  @@map("language")
+}
+
+model CodeLanguage {
+  codeLanguageId Int @id @default(autoincrement()) @map("code_language_id")
+  language Language @relation(fields: [languageId], references: [languageId], onUpdate: Cascade, onDelete: Cascade)
+  languageId Int @map("language_id")
+  code Code @relation(fields: [codeId], references: [codeId], onUpdate: Cascade, onDelete: Cascade)
+  codeId Int  @map("code_id")
+
+  explanation String @db.VarChar(8000)
+  urlAws String @db.VarChar(150) @unique @map("url_aws")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  codeLanguageLineExplanation CodeLanguageLineExplanation[]
+  commentsCodeLanguaje CommentsCodeLanguaje[]
+  codeHistory CodeHistory[]
+  codeLanguageTag CodeLanguageTag[]
+
+  @@unique([codeId, languageId])
+  @@map("code_language")
+}
+
+model TagByLanguage {
+  tagByLanguageId Int @id @default(autoincrement()) @map("tag_by_language_id")
+  tagByLanguage String @db.VarChar(20) @unique @map("tag_by_language")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  language Language @relation(fields: [languageId], references: [languageId], onUpdate: Cascade, onDelete: Cascade)
+  languageId Int @map("language_id")
+
+  codeLanguageTag CodeLanguageTag[]
+
+  @@map("tag_by_language")
+}
+
+model CodeLanguageTag {
+  codeLanguageTagId Int @id @default(autoincrement()) @map("code_language_tag_id")
+  tagByLanguage TagByLanguage @relation(fields: [tagByLanguageId], references: [tagByLanguageId], onUpdate: Cascade, onDelete: Cascade)
+  tagByLanguageId Int @map("tag_by_language_id")
+  codeLanguage CodeLanguage @relation(fields: [codeLanguageId], references: [codeLanguageId], onUpdate: Cascade, onDelete: Cascade)
+  codeLanguageId Int @map("code_language_id")
+
+  @@map("code_language_tag")
+}
+
+model CommentsCodeLanguaje {
+  commentsCodeLanguajeId Int @id @default(autoincrement()) @map("comments_code_languaje_id")
+  codeLanguage CodeLanguage @relation(fields: [codeLanguageId], references: [codeLanguageId], onUpdate: Cascade, onDelete: Cascade)
+  codeLanguageId Int @map("code_language_id")
+  user Users @relation(fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
+  userId Int @map("user_id")
+  comments String @db.VarChar(700)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("comments_code_languaje")
+}
+
+model CommentsCode {
+  commentsCodeLanguajeId Int @id @default(autoincrement()) @map("comments_code_id")
+  code Code @relation(fields: [codeId], references: [codeId], onUpdate: Cascade, onDelete: Cascade)
+  codeId Int @map("code_id")
+  user Users @relation(fields: [userId], references: [userId], onUpdate: Cascade, onDelete: Cascade)
+  userId Int @map("user_id")
+  comments String @db.VarChar(700)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("comments_code")
+}
+
+model LineExplanation {
+  lineExplanationId Int @id @default(autoincrement()) @map("line_explanation_id")
+  lineExplanation String @db.VarChar(8000) @map("line_explanation")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  codeLanguageLineExplanation CodeLanguageLineExplanation[]
+
+  @@map("line_explanation")
+}
+
+model CodeLanguageLineExplanation {
+  codeLanguageLineExplanationId Int @id @default(autoincrement()) @map("code_language_line_explanation_id")
+  codeLanguage CodeLanguage @relation(fields: [codeLanguageId], references: [codeLanguageId], onUpdate: Cascade, onDelete: Cascade)
+  codeLanguageId Int @map("code_language_line_number_id")
+  lineExplanation LineExplanation @relation(fields: [lineExplanationId], references: [lineExplanationId], onUpdate: Cascade, onDelete: Cascade)
+  lineExplanationId Int  @map("line_explanation")
+  lineStart Int @map("line_start")
+  lineEnd Int @map("line_end")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("code_language_line_explanation")
+}
+
+model LineExplanationHistory {
+  lineExplanationHistoryId Int @id @default(autoincrement()) @map("line_explanation_history_id")
+  lineExplanationHistory String @db.VarChar(8000) @unique @map("line_explanation_history")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  codeHistoryLineExplanation CodeHistoryLineExplanation[]
+
+  @@map("line_explanation_history")
+}
+
+model CodeHistoryLineExplanation {
+  codeHistoryLineExplanationId Int @id @default(autoincrement()) @map("code_history_line_explanation_id")
+  lineExplanationHistory LineExplanationHistory @relation(fields: [lineExplanationHistoryId], references: [lineExplanationHistoryId], onUpdate: Cascade, onDelete: Cascade)
+  lineExplanationHistoryId Int @map("code_language_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  codeHistory CodeHistory[]
+
+  @@map("code_history_line_explanation")
+}
+
+model CodeHistory {
+  codeHistoryId Int @id @default(autoincrement()) @map("code_history_id")
+  codeLanguage CodeLanguage @relation(fields: [codeLanguageId], references: [codeLanguageId], onUpdate: Cascade, onDelete: Cascade)
+  codeLanguageId Int @map("code_language_id")
+  codeHistoryLineExplanation CodeHistoryLineExplanation @relation(fields: [codeHistoryLineExplanationId], references: [codeHistoryLineExplanationId], onUpdate: Cascade, onDelete: Cascade)
+  codeHistoryLineExplanationId Int  @map("code_history_line_explanation_id")
+
+  explanationHistory String @db.VarChar(8000) @unique @map("explanation_history")
+  urlAws String @db.VarChar(150) @unique @map("url_aws")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("code_history")
+}
