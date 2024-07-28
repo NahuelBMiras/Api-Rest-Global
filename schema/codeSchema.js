@@ -32,8 +32,9 @@ const getValidationLists = async () => {
     (tagLanguage) => tagLanguage.tagByLanguage
   );
   const languageList = languages.map((language) => language.language);
+  const titleList = code.map((code) => code.title);
 
-  return { tagList, tagLanguageList, languageList };
+  return { tagList, tagLanguageList, languageList, titleList };
 };
 
 const createCodeSchema = (tagList) => {
@@ -46,11 +47,20 @@ const createCodeSchema = (tagList) => {
   });
 };
 
-const createCodeLanguageSchema = (languageList, tagLanguageList, code) => {
+const updateCodeSchema = (tagList) => {
+  return Joi.object({
+    updateTitle: Joi.string().max(100),
+    explanation: Joi.string().max(300),
+    codeTags: Joi.array().items(Joi.string().valid(...tagList)),
+    deleteTags: Joi.array().items(Joi.string().valid(...tagList)),
+  });
+};
+
+const createCodeLanguageSchema = (languageList, tagLanguageList, titleList) => {
   return Joi.object({
     codeTitle: Joi.string()
-      .valid(...code)
-      .max()
+      .valid(...titleList)
+      .max(100)
       .required(),
     language: Joi.string()
       .valid(...languageList)
@@ -64,15 +74,36 @@ const createCodeLanguageSchema = (languageList, tagLanguageList, code) => {
   });
 };
 
+const updateCodeLanguageSchema = (languageList, tagLanguageList, titleList) => {
+  return Joi.object({
+    language: Joi.string()
+      .valid(...languageList)
+      .max(30)
+      .required(),
+    tagLanguage: Joi.array().items(Joi.string().valid(...tagLanguageList)),
+    deleteTagLanguage: Joi.array().items(
+      Joi.string().valid(...tagLanguageList)
+    ),
+    explanation: Joi.string().max(8000),
+    urlAws: Joi.string().max(150),
+  });
+};
+
 export const getSchema = async () => {
-  const { tagList, tagLanguageList, languageList, code } =
+  const { tagList, tagLanguageList, languageList, titleList } =
     await getValidationLists();
   return {
+    updateCodeSchema: updateCodeSchema(tagList),
     createCodeSchema: createCodeSchema(tagList),
     createCodeLanguageSchema: createCodeLanguageSchema(
       languageList,
       tagLanguageList,
-      code
+      titleList
+    ),
+    updateCodeLanguageSchema: updateCodeLanguageSchema(
+      languageList,
+      tagLanguageList,
+      titleList
     ),
   };
 };

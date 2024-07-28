@@ -1,5 +1,15 @@
+import { isAdmin } from '../middleware/isAdmin.js';
 import { codeController } from '../controller/codeController.js';
-const { getCode, getCodeByOption, createCode } = codeController();
+const {
+  getCode,
+  getCodeByOption,
+  createCode,
+  createCodeLanguage,
+  editCode,
+  editCodeLanguage,
+  deleteCode,
+  deleteCodeLanguage,
+} = codeController();
 
 import express from 'express';
 
@@ -7,12 +17,17 @@ const codeRouter = express.Router();
 
 codeRouter.route('/').get(getCode);
 
-codeRouter.route('/:searchCode').get(getCodeByOption);
+codeRouter.route('/search').get(getCodeByOption);
 
 codeRouter.route('/create-code').post(createCode);
 
-codeRouter.route('/edit-code/:codeId').put();
+codeRouter.route('/create-code-language').post(createCodeLanguage);
 
-codeRouter.route('/delete-code/:codeId').put();
+codeRouter.route('/edit-code').put(editCode);
+codeRouter.route('/edit-code-language').put(editCodeLanguage);
+
+codeRouter.route('/delete-code').delete(isAdmin, deleteCode);
+
+codeRouter.route('/delete-code-language').delete(isAdmin, deleteCodeLanguage);
 
 export default codeRouter;

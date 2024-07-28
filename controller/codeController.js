@@ -43,7 +43,7 @@ export const codeController = () => {
       if (!findTags.length) {
         return res.status(404).json({ message: 'Tags not found' });
       }
-      // Obtenemos un array con los valor del id de cada tag encontrado
+
       const tagListId = findTags.map((tag) => tag.tagId);
 
       const code = await prisma.code.create({
@@ -95,10 +95,10 @@ export const codeController = () => {
     try {
       const codeLanguageTags = newCode.tagLanguage;
 
-      const findCode = await prisma.code.findMany({
+      const findCode = await prisma.code.findFirst({
         where: {
           userId: user.userId,
-          title: newCode.title,
+          title: newCode.codeTitle,
         },
       });
 
@@ -113,23 +113,22 @@ export const codeController = () => {
       // Obtenemos un array con los valor del id de cada tag encontrado
       const tagListId = findTags.map((tag) => tag.tagByLanguageId);
 
-      const languages = await prisma.language.findMany({
+      const languages = await prisma.language.findUnique({
         where: {
-          language: {
-            in: language,
-          },
+          language: newCode.language,
         },
       });
-      if (!languages.length) {
+      if (!languages) {
         return res.status(404).json({ message: 'Language not found' });
       }
 
-      const code = await prisma.codeLanguage.create({
+      const codeLanguage = await prisma.codeLanguage.create({
         data: {
+          languageId: languages.languageId,
           codeId: findCode.codeId,
           explanation: newCode.explanation,
-          codeTag: {
-            create: tagListId.map((id) => ({ tagId: id })),
+          codeLanguageTag: {
+            create: tagListId.map((id) => ({ tagByLanguageId: id })),
           },
           urlAws: newCode.urlAws,
         },
@@ -137,7 +136,7 @@ export const codeController = () => {
 
       return res
         .status(200)
-        .json({ message: 'Code created successfully', code });
+        .json({ message: 'Code created successfully', codeLanguage });
     } catch (error) {
       next(error);
     }
@@ -160,23 +159,26 @@ export const codeController = () => {
     }
   };
   const getCodeByOption = async (req, res, next) => {
-    const { title, tag, tagLanguage, language } = req.params;
+    const { title, tag, tagLanguage, language } = req.query;
 
     try {
       const options = [];
+      let tagLanguageIds = []; // Inicializa tagLanguageIds aquí
 
       if (tag) {
         const tagList = await prisma.tag.findMany({
           where: {
             tag: {
-              in: tag,
+              in: tag.split(','),
             },
           },
           select: {
             tagId: true,
           },
         });
+
         const tagIds = tagList.map((tag) => tag.tagId);
+
         if (tagIds.length > 0) {
           options.push({
             codeTag: {
@@ -194,27 +196,33 @@ export const codeController = () => {
         const tagLanguageList = await prisma.tagByLanguage.findMany({
           where: {
             tagByLanguage: {
-              in: tagLanguage,
+              in: tagLanguage.split(','),
             },
           },
           select: {
             tagByLanguageId: true,
           },
         });
-        const tagLanguageIds = tagLanguageList.map(
+
+        tagLanguageIds = tagLanguageList.map(
           (tagLang) => tagLang.tagByLanguageId
         );
-        if (tagLanguageIds.length > 0) {
-          options.push({
-            codeLanguageTag: {
-              some: {
-                tagByLanguageId: {
-                  in: tagLanguageIds,
+      }
+
+      if (tagLanguageIds.length > 0) {
+        options.push({
+          codeLanguage: {
+            some: {
+              codeLanguageTag: {
+                some: {
+                  tagByLanguageId: {
+                    in: tagLanguageIds,
+                  },
                 },
               },
             },
-          });
-        }
+          },
+        });
       }
 
       if (language) {
@@ -226,10 +234,13 @@ export const codeController = () => {
             languageId: true,
           },
         });
+
         if (findLanguage) {
           options.push({
             codeLanguage: {
-              languageId: findLanguage.languageId,
+              some: {
+                languageId: findLanguage.languageId,
+              },
             },
           });
         }
@@ -244,28 +255,386 @@ export const codeController = () => {
         });
       }
 
-      const code = await prisma.code.findMany({
+      const codes = await prisma.code.findMany({
         where: {
-          OR: options,
+          OR: options.length > 0 ? options : undefined,
+        },
+        include: {
+          codeTag: true,
+          codeLanguage: {
+            include: {
+              codeLanguageTag: true,
+            },
+          },
         },
       });
 
       res.status(200).json({
         success: true,
         message: 'Códigos obtenidos correctamente',
-        data: code,
+        data: { codes },
       });
     } catch (error) {
       next(error);
     }
   };
-  const editCode = async (req, res, next) => {};
-  const deleteCode = async (req, res, next) => {};
+
+  const editCode = async (req, res, next) => {
+    const { title } = req.query;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      throw new Error('No authorization header provided');
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      throw new Error('Token not found');
+    }
+    const userId = verifiedToken(token).userId;
+
+    const updateCode = req.body;
+    const user = await prisma.users.findUnique({
+      where: {
+        userId: userId,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const schema = await getSchema();
+    const { error } = schema.updateCodeSchema.validate(updateCode);
+    if (error) {
+      return res.status(400).json({ error: error.details });
+    }
+
+    try {
+      const codeTags = updateCode.codeTags;
+      const deleteCodeTags = updateCode.deleteTags;
+
+      const findCode = await prisma.code.findFirst({
+        where: {
+          title: title,
+          userId: userId,
+        },
+      });
+
+      if (!findCode) {
+        return res.status(404).json({ message: 'Code not found' });
+      }
+
+      const findTags = await prisma.tag.findMany({
+        where: {
+          tag: { in: codeTags },
+        },
+      });
+      const findDeleteTags = await prisma.tag.findMany({
+        where: {
+          tag: { in: deleteCodeTags },
+        },
+      });
+      if (!findTags.length) {
+        return res.status(404).json({ message: 'Tags not found' });
+      }
+      const tagListId = findTags.map((tag) => tag.tagId);
+      const deleteTagListId = findDeleteTags.map((tag) => tag.tagId);
+      const codeId = findCode.codeId;
+
+      await prisma.codeTag.deleteMany({
+        where: {
+          codeId: codeId,
+          tagId: {
+            in: deleteTagListId,
+          },
+        },
+      });
+      if (tagListId.length > 0) {
+        await prisma.codeTag.deleteMany({
+          create: tagListId.map((id) => ({ tagId: id })),
+        });
+      }
+
+      const code = await prisma.code.update({
+        where: {
+          codeId: codeId,
+        },
+        data: {
+          title: updateCode.updateTitle,
+          explanation: updateCode.explanation,
+        },
+      });
+
+      return res
+        .status(200)
+        .json({ message: 'Code created successfully', code });
+    } catch (error) {
+      next(error);
+    }
+  };
+  const editCodeLanguage = async (req, res, next) => {
+    const { title } = req.query;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      throw new Error('No authorization header provided');
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      throw new Error('Token not found');
+    }
+    const userId = verifiedToken(token).userId;
+
+    const updateCode = req.body;
+    const user = await prisma.users.findUnique({
+      where: {
+        userId: userId,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const schema = await getSchema();
+    const { error } = schema.updateCodeLanguageSchema.validate(updateCode);
+    if (error) {
+      return res.status(400).json({ error: error.details });
+    }
+
+    try {
+      const LanguageTags = updateCode.tagLanguage;
+      const deleteLanguageTags = updateCode.deleteTagLanguage;
+
+      const languages = await prisma.language.findUnique({
+        where: {
+          language: updateCode.language,
+        },
+      });
+
+      const findCode = await prisma.code.findFirst({
+        where: {
+          userId: user.userId,
+          title: title,
+          codeLanguage: {
+            language: languages.languageId,
+          },
+        },
+        include: {
+          codeLanguage: true,
+        },
+      });
+
+      if (!findCode) {
+        return res.status(404).json({ message: 'Code not found' });
+      }
+
+      const findTags = await prisma.tagByLanguage.findMany({
+        where: {
+          tagByLanguage: { in: LanguageTags },
+        },
+      });
+      const findDeleteTags = await prisma.tagByLanguage.findMany({
+        where: {
+          tagByLanguage: { in: deleteLanguageTags },
+        },
+      });
+      if (!findTags.length) {
+        return res.status(404).json({ message: 'Tags not found' });
+      }
+
+      const tagListId = findTags.map((tag) => tag.tagByLanguageId);
+      const deleteTagListId = findDeleteTags.map((tag) => tag.tagByLanguageId);
+
+      if (!languages) {
+        return res.status(404).json({ message: 'Language not found' });
+      }
+
+      await prisma.codeLanguageTag.deleteMany({
+        where: {
+          codeLanguageId: findCode.codeLanguage.codeLanguageId,
+          tagByLanguage: { in: deleteTagListId },
+        },
+      });
+
+      if (tagListId.length > 0) {
+        await prisma.codeLanguageTag.deleteMany({
+          create: tagListId.map((id) => ({ tagByLanguageId: id })),
+        });
+      }
+
+      const codeLanguage = await prisma.codeLanguage.update({
+        where: {
+          codeLanguageId: findCode.codeLanguage.codeLanguageId,
+        },
+        data: {
+          explanation: updateCode.explanation,
+          urlAws: updateCode.urlAws,
+        },
+      });
+
+      return res
+        .status(200)
+        .json({ message: 'Code created successfully', codeLanguage });
+    } catch (error) {
+      next(error);
+    }
+  };
+  const deleteCode = async (req, res, next) => {
+    const { access } = req.user;
+
+    let userId;
+    if (!access) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res
+          .status(401)
+          .json({ message: 'No authorization header provided' });
+      }
+
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({ message: 'Token not found' });
+      }
+
+      const decodedToken = verifiedToken(token);
+      userId = decodedToken.userId;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+    } else {
+      userId = parseInt(req.query.userId);
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID not provided' });
+      }
+    }
+
+    const { title } = req.query;
+
+    try {
+      const findCode = await prisma.code.findFirst({
+        where: {
+          userId: userId,
+          title: title,
+        },
+      });
+      if (!findCode) {
+        return res.status(404).json({ message: 'Title and user do not match' });
+      }
+      await prisma.code.delete({
+        where: {
+          userId: userId,
+          codeId: findCode.codeId,
+        },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Code deleted successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+  const deleteCodeLanguage = async (req, res, next) => {
+    const { access } = req.user;
+
+    let userId;
+    if (!access) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res
+          .status(401)
+          .json({ message: 'No authorization header provided' });
+      }
+
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({ message: 'Token not found' });
+      }
+
+      const decodedToken = verifiedToken(token);
+      userId = decodedToken.userId;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+    } else {
+      userId = parseInt(req.query.userId);
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID not provided' });
+      }
+    }
+
+    const { title, language } = req.query;
+
+    try {
+      const findLanguage = await prisma.language.findUnique({
+        where: {
+          language: language,
+        },
+      });
+      console.log(findLanguage.languageId);
+      if (!findLanguage) {
+        return res.status(404).json({ message: 'language not found' });
+      }
+      const findCode = await prisma.code.findFirst({
+        where: {
+          userId: userId,
+          title: title,
+          codeLanguage: {
+            some: {
+              languageId: findLanguage.languageId,
+            },
+          },
+        },
+        include: {
+          codeLanguage: true,
+        },
+      });
+      if (!findCode) {
+        return res
+          .status(404)
+          .json({ message: 'Title, user and language do not match' });
+      }
+
+      const findCodeLanguage = await prisma.codeLanguage.findFirst({
+        where: {
+          codeId: findCode.codeId,
+          languageId: findLanguage.languageId,
+        },
+      });
+      if (!findCode) {
+        return res
+          .status(404)
+          .json({ message: 'Title, user and language do not match' });
+      }
+      console.log(findCode.codeLanguage.codeLanguageId);
+      const findLanguageId = findLanguage.languageId;
+      await prisma.codeLanguage.delete({
+        where: {
+          codeId: findCode.codeId,
+          codeLanguageId: findCodeLanguage.codeLanguageId,
+          languageId: findLanguageId,
+        },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Code Language deleted successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   return {
     createCode,
+    createCodeLanguage,
     getCode,
     getCodeByOption,
     editCode,
+    editCodeLanguage,
     deleteCode,
+    deleteCodeLanguage,
   };
 };

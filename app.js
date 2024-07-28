@@ -7,10 +7,13 @@ import codeRouter from './routes/codeRouter.js';
 import { expressjwt as ejwt } from 'express-jwt';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import http from 'http';
 import express from 'express';
+
 dotenv.config();
 const app = express();
 const port = 3000;
+const httpServer = http.createServer(app);
 
 app.use(express.json());
 app.use(
@@ -39,6 +42,6 @@ app.use('/user', userRouter);
 
 app.use('/code', codeRouter);
 
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`API listening at http://localhost:${port}`);
 });
