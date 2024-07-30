@@ -107,7 +107,6 @@ export const usersController = () => {
     const { username, user } = req.query;
     let token;
     let userId;
-    console.log(userId);
     if (!access) {
       const authHeader = req.headers.authorization;
       if (!authHeader) {
@@ -123,21 +122,16 @@ export const usersController = () => {
     } else {
       userId = parseInt(user);
     }
-    console.log(!access);
 
     const editUser = req.body;
 
     try {
-      console.log(username);
-      console.log(userId);
-
       const findUser = await prisma.users.findFirst({
         where: {
           username: username,
           userId: userId,
         },
       });
-      console.log(findUser);
 
       if (!findUser) {
         return res.status(404).json({ message: 'User not found' });

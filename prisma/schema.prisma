@@ -80,6 +80,7 @@ model CodeTag {
   codeId Int @map("code_id")
 
   @@map("code_tag")
+  @@unique([tagId, codeId])
 }
 
 model FavoritesOrSaved {
@@ -158,6 +159,8 @@ model CodeLanguageTag {
   codeLanguageId Int @map("code_language_id")
 
   @@map("code_language_tag")
+  @@unique([tagByLanguageId, codeLanguageId])
+
 }
 
 model CommentsCodeLanguaje {

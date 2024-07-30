@@ -56,10 +56,16 @@ export const codeController = () => {
           },
         },
       });
+      const resFormat = {
+        title: code.title,
+        author: user.username,
+        explanation: code.explanation,
+        tags: codeTags,
+      };
 
       return res
         .status(200)
-        .json({ message: 'Code created successfully', code });
+        .json({ message: 'Code created successfully', resFormat });
     } catch (error) {
       next(error);
     }
@@ -134,9 +140,18 @@ export const codeController = () => {
         },
       });
 
+      const resFormat = {
+        title: findCode.title,
+        author: user.username,
+        language: languages.language,
+        explanation: codeLanguage.explanation,
+        url: codeLanguage.urlAws,
+        tags: codeLanguageTags,
+      };
+
       return res
         .status(200)
-        .json({ message: 'Code created successfully', codeLanguage });
+        .json({ message: 'Code created successfully', resFormat });
     } catch (error) {
       next(error);
     }
@@ -149,10 +164,20 @@ export const codeController = () => {
         },
       });
 
+      const resFormat = {
+        code: codeList.map((code) => {
+          return {
+            title: code.title,
+            explanation: code.explanation,
+            language: code.codeLanguage,
+          };
+        }),
+      };
+
       res.status(200).json({
         success: true,
         message: 'Codigos obtenidos correctamente',
-        data: codeList,
+        data: resFormat,
       });
     } catch (error) {
       next(error);
@@ -169,7 +194,7 @@ export const codeController = () => {
         const tagList = await prisma.tag.findMany({
           where: {
             tag: {
-              in: tag.split(','),
+              in: tag,
             },
           },
           select: {
@@ -196,7 +221,7 @@ export const codeController = () => {
         const tagLanguageList = await prisma.tagByLanguage.findMany({
           where: {
             tagByLanguage: {
-              in: tagLanguage.split(','),
+              in: tagLanguage,
             },
           },
           select: {
@@ -269,10 +294,65 @@ export const codeController = () => {
         },
       });
 
+      const languageIds = codes.flatMap((code) =>
+        code.codeLanguage.map((cl) => cl.languageId)
+      );
+
+      const findLanguage = await prisma.language.findMany({
+        where: {
+          languageId: { in: languageIds },
+        },
+      });
+
+      const tagIds = codes.flatMap((code) =>
+        code.codeTag.map((cl) => cl.tagId)
+      );
+
+      const findTags = await prisma.tag.findMany({
+        where: {
+          tagId: { in: tagIds },
+        },
+      });
+
+      const languageTagIds = codes.flatMap((code) =>
+        code.codeLanguage.flatMap((codeLanguage) =>
+          codeLanguage.codeLanguageTag.map((cl) => cl.tagByLanguageId)
+        )
+      );
+      console.log(languageTagIds);
+
+      const findlanguageTags = await prisma.tagByLanguage.findMany({
+        where: {
+          tagByLanguageId: { in: languageTagIds },
+        },
+      });
+
+      const resFormat = codes.map((code) => {
+        return {
+          title: code.title,
+          explanation: code.explanation,
+          codeTag: code.codeTag.map((ct) => ({
+            tag: findTags.find((tag) => tag.tagId === ct.tagId).tag,
+          })),
+          codeLanguage: code.codeLanguage.map((cl) => ({
+            language: findLanguage.find(
+              (language) => language.languageId === cl.languageId
+            ).language,
+          })),
+          codeLanguageTags: code.codeLanguage.flatMap((tagLanguage) =>
+            tagLanguage.codeLanguageTag.flatMap((codeLanguageTag) => ({
+              tagLanguage: findlanguageTags.find(
+                (tag) => tag.tagByLanguageId === codeLanguageTag.tagByLanguageId
+              ).tagByLanguage,
+            }))
+          ),
+        };
+      });
+
       res.status(200).json({
         success: true,
         message: 'Códigos obtenidos correctamente',
-        data: { codes },
+        data: resFormat,
       });
     } catch (error) {
       next(error);
@@ -281,6 +361,8 @@ export const codeController = () => {
 
   const editCode = async (req, res, next) => {
     const { title } = req.query;
+    const updateCode = req.body;
+
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       throw new Error('No authorization header provided');
@@ -291,7 +373,6 @@ export const codeController = () => {
     }
     const userId = verifiedToken(token).userId;
 
-    const updateCode = req.body;
     const user = await prisma.users.findUnique({
       where: {
         userId: userId,
@@ -309,8 +390,8 @@ export const codeController = () => {
     }
 
     try {
-      const codeTags = updateCode.codeTags;
-      const deleteCodeTags = updateCode.deleteTags;
+      const codeTags = updateCode.codeTags ?? [];
+      const deleteCodeTags = updateCode.deleteTags ?? [];
 
       const findCode = await prisma.code.findFirst({
         where: {
@@ -323,50 +404,63 @@ export const codeController = () => {
         return res.status(404).json({ message: 'Code not found' });
       }
 
-      const findTags = await prisma.tag.findMany({
-        where: {
-          tag: { in: codeTags },
-        },
-      });
-      const findDeleteTags = await prisma.tag.findMany({
-        where: {
-          tag: { in: deleteCodeTags },
-        },
-      });
-      if (!findTags.length) {
-        return res.status(404).json({ message: 'Tags not found' });
-      }
-      const tagListId = findTags.map((tag) => tag.tagId);
-      const deleteTagListId = findDeleteTags.map((tag) => tag.tagId);
       const codeId = findCode.codeId;
 
-      await prisma.codeTag.deleteMany({
-        where: {
-          codeId: codeId,
-          tagId: {
-            in: deleteTagListId,
-          },
-        },
-      });
-      if (tagListId.length > 0) {
+      if (deleteCodeTags.length > 0) {
+        const findDeleteTags = await prisma.tag.findMany({
+          where: { tag: { in: deleteCodeTags } },
+        });
+
+        if (!findDeleteTags.length) {
+          return res.status(404).json({ message: 'Tags to delete not found' });
+        }
+        const deleteTagListId = findDeleteTags.map((tag) => tag.tagId);
+
         await prisma.codeTag.deleteMany({
-          create: tagListId.map((id) => ({ tagId: id })),
+          where: {
+            codeId: codeId,
+            tagId: { in: deleteTagListId },
+          },
         });
       }
 
+      // Actualizar el código
       const code = await prisma.code.update({
-        where: {
-          codeId: codeId,
-        },
+        where: { codeId: codeId },
         data: {
-          title: updateCode.updateTitle,
-          explanation: updateCode.explanation,
+          title: updateCode.updateTitle ?? findCode.title,
+          explanation: updateCode.explanation ?? findCode.explanation,
         },
       });
 
+      // Manejar adición de tags
+      if (codeTags.length > 0) {
+        const findTags = await prisma.tag.findMany({
+          where: { tag: { in: codeTags } },
+        });
+
+        if (!findTags.length) {
+          return res.status(404).json({ message: 'Tags not found' });
+        }
+        const tagListId = findTags.map((tag) => tag.tagId);
+
+        await prisma.codeTag.createMany({
+          data: tagListId.map((id) => ({
+            codeId: code.codeId,
+            tagId: id,
+          })),
+        });
+      }
+
+      const resFormat = {
+        title: code.title,
+        author: user.username,
+        explanation: code.explanation,
+      };
+
       return res
         .status(200)
-        .json({ message: 'Code created successfully', code });
+        .json({ message: 'Code created successfully', resFormat });
     } catch (error) {
       next(error);
     }
@@ -401,79 +495,97 @@ export const codeController = () => {
     }
 
     try {
-      const LanguageTags = updateCode.tagLanguage;
-      const deleteLanguageTags = updateCode.deleteTagLanguage;
+      const LanguageTags = updateCode.tagLanguage ?? [];
+      const deleteLanguageTags = updateCode.deleteTagLanguage ?? [];
 
-      const languages = await prisma.language.findUnique({
-        where: {
-          language: updateCode.language,
-        },
+      const language = await prisma.language.findUnique({
+        where: { language: updateCode.language },
       });
+
+      if (!language) {
+        return res.status(404).json({ message: 'Language not found' });
+      }
 
       const findCode = await prisma.code.findFirst({
         where: {
           userId: user.userId,
           title: title,
           codeLanguage: {
-            language: languages.languageId,
+            some: {
+              languageId: language.languageId,
+            },
           },
         },
-        include: {
-          codeLanguage: true,
-        },
+        include: { codeLanguage: true },
       });
 
       if (!findCode) {
         return res.status(404).json({ message: 'Code not found' });
       }
 
-      const findTags = await prisma.tagByLanguage.findMany({
-        where: {
-          tagByLanguage: { in: LanguageTags },
-        },
-      });
-      const findDeleteTags = await prisma.tagByLanguage.findMany({
-        where: {
-          tagByLanguage: { in: deleteLanguageTags },
-        },
-      });
-      if (!findTags.length) {
-        return res.status(404).json({ message: 'Tags not found' });
-      }
+      const codeLanguageId = findCode.codeLanguage.flatMap(
+        (code) => code.codeLanguageId
+      )[0];
+      console.log(codeLanguageId);
 
-      const tagListId = findTags.map((tag) => tag.tagByLanguageId);
-      const deleteTagListId = findDeleteTags.map((tag) => tag.tagByLanguageId);
+      if (deleteLanguageTags.length > 0) {
+        const findDeleteTags = await prisma.tagByLanguage.findMany({
+          where: { tagByLanguage: { in: deleteLanguageTags } },
+        });
 
-      if (!languages) {
-        return res.status(404).json({ message: 'Language not found' });
-      }
+        if (!findDeleteTags.length) {
+          return res.status(404).json({ message: 'Tags to delete not found' });
+        }
 
-      await prisma.codeLanguageTag.deleteMany({
-        where: {
-          codeLanguageId: findCode.codeLanguage.codeLanguageId,
-          tagByLanguage: { in: deleteTagListId },
-        },
-      });
+        const deleteTagListId = findDeleteTags.map(
+          (tag) => tag.tagByLanguageId
+        );
 
-      if (tagListId.length > 0) {
         await prisma.codeLanguageTag.deleteMany({
-          create: tagListId.map((id) => ({ tagByLanguageId: id })),
+          where: {
+            codeLanguageId: codeLanguageId[0],
+            tagByLanguageId: { in: deleteTagListId },
+          },
         });
       }
 
       const codeLanguage = await prisma.codeLanguage.update({
-        where: {
-          codeLanguageId: findCode.codeLanguage.codeLanguageId,
-        },
+        where: { codeLanguageId: codeLanguageId },
         data: {
-          explanation: updateCode.explanation,
-          urlAws: updateCode.urlAws,
+          explanation: updateCode.explanation ?? findCode.explanation,
+          urlAws: updateCode.urlAws ?? findCode.urlAws,
         },
       });
 
+      if (LanguageTags.length > 0) {
+        const findTags = await prisma.tagByLanguage.findMany({
+          where: { tagByLanguage: { in: LanguageTags } },
+        });
+
+        if (!findTags.length) {
+          return res.status(404).json({ message: 'Tags not found' });
+        }
+
+        const tagListId = findTags.map((tag) => tag.tagByLanguageId);
+
+        await prisma.codeLanguageTag.createMany({
+          data: tagListId.map((id) => ({
+            codeLanguageId: codeLanguageId,
+            tagByLanguageId: id,
+          })),
+        });
+      }
+
+      const resFormat = {
+        title: findCode.title,
+
+        explanation: codeLanguage.explanation,
+        urlAws: codeLanguage.urlAws,
+      };
+
       return res
         .status(200)
-        .json({ message: 'Code created successfully', codeLanguage });
+        .json({ message: 'Code updated successfully', resFormat });
     } catch (error) {
       next(error);
     }
